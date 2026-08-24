@@ -41,8 +41,9 @@ func (s *Store) UpdateDraft(draftMeters, deckMeters, hatchMeters float64, at tim
 	s.profile = current
 	listeners := append([]Listener(nil), s.listeners...)
 	s.mu.Unlock()
-	_ = previous
-	_ = listeners
+	for _, listener := range listeners {
+		listener(previous, current)
+	}
 	return current, nil
 }
 

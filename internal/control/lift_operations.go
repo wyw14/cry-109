@@ -53,6 +53,10 @@ func (r *Runtime) ReplanTrolley(liftID string, distance, maxSpeed, ropeLength, p
 	current.GeometryRevision = geometry.Revision
 	sway := r.Models.GetOrBuild(current.ID, geometry, ropeLength, payloadTonnes)
 	profile := r.Vessel.Current()
+	clearancePlan := lift.PlanClearance(current.ID, profile, 1.2, 14)
+	if !clearancePlan.CanTraverse(profile) {
+		return model.Trajectory{}, errors.New(clearancePlan.Reason)
+	}
 	replanned, err := r.Antisway.Plan(current.ID, sway, distance, maxSpeed)
 	if err != nil {
 		return model.Trajectory{}, err

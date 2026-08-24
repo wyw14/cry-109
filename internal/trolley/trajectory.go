@@ -62,5 +62,11 @@ func (s *TrajectoryService) InvalidateGeometry(previous, current model.Geometry)
 func (s *TrajectoryService) InvalidateVessel(revision uint64) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	_ = revision
+	for key, trajectory := range s.pending {
+		if trajectory.VesselRevision != revision {
+			trajectory.Valid = false
+			trajectory.Reason = "vessel geometry changed before trolley traversal"
+			s.pending[key] = trajectory
+		}
+	}
 }
