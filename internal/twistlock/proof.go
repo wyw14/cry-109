@@ -51,16 +51,21 @@ func (r *ProofReducer) Snapshot() model.TwistlockProof {
 	return r.snapshot("")
 }
 
+// allLocked reports completion only when every corner of the spreader has
+// reported a successful, current-session lock. A single diagonal pair
+// (front-left + rear-right, or front-right + rear-left) locking first must
+// NOT be treated as complete: that lets the hoist transfer load while the
+// remaining corners are still turning, which lifts one side of the container
+// and drops it back onto the hatch. All four corners must belong to this
+// engage session and be confirmed locked before load may be transferred.
 func (r *ProofReducer) allLocked() bool {
-	pairs := [][2]model.Corner{{model.FrontLeft, model.RearRight}, {model.FrontRight, model.RearLeft}}
-	for _, pair := range pairs {
-		left, leftOK := r.acks[pair[0]]
-		right, rightOK := r.acks[pair[1]]
-		if leftOK && rightOK && left.Locked && right.Locked && !left.Failed && !right.Failed {
-			return left.SessionID == r.session && right.SessionID == r.session
+	for _, corner := range model.AllCorners() {
+		ack, ok := r.acks[corner]
+		if !ok || ack.SessionID != r.session || !ack.Locked || ack.Failed {
+			return false
 		}
 	}
-	return false
+	return true
 }
 
 func (r *ProofReducer) snapshot(reason string) model.TwistlockProof {

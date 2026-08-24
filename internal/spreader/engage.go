@@ -61,10 +61,23 @@ func (c *EngageController) State() EngageState {
 	return c.state
 }
 
+// RequireLocked gates load transfer on an explicit four-corner proof: the
+// engage session must match, the proof must be complete and not failed, and
+// no corner may be missing. The Complete flag is derived from all four
+// corners locking in this session, but the missing-corner check is kept
+// explicit so that a future weakening of that derivation can never, on its
+// own, let the hoist transfer load before every twistlock is seated.
 func (c *EngageController) RequireLocked() error {
 	proof := c.Proof()
-	if proof.SessionID != c.session || !proof.Complete || proof.Failed {
-		return errors.New("spreader does not have a complete current-session lock proof")
+	switch {
+	case proof.SessionID != c.session:
+		return errors.New("spreader lock proof belongs to a different engage session")
+	case proof.Failed:
+		return errors.New("spreader does not have a complete current-session lock proof: a corner rejected engagement")
+	case !proof.Complete:
+		return errors.New("spreader does not have a complete current-session lock proof: not all corners locked")
+	case len(proof.Missing) != 0:
+		return errors.New("spreader does not have a complete current-session lock proof: corners still missing")
 	}
 	return nil
 }
