@@ -36,7 +36,7 @@ func (s *Service) ObserveWind(speedMPS float64, at time.Time) (model.AnchorState
 	if _, err := s.brake.SetMode(model.BrakeFriction, 90, "storm stop"); err != nil {
 		return model.AnchorRaised, err
 	}
-	if err := s.sequence.Request(at); err != nil && !errors.Is(err, errors.New("anchor is already descending")) {
+	if err := s.sequence.Request(at); err != nil && !errors.Is(err, ErrAnchorAlreadyDescending) {
 		return model.AnchorRaised, err
 	}
 	state, _, _ := s.sequence.Snapshot()

@@ -10,6 +10,11 @@ import (
 	"github.com/wyw14/cry-109/internal/model"
 )
 
+// ErrAnchorAlreadyDescending is returned by Request when the anchor pin is
+// already traveling into the socket. It is a sentinel so callers can suppress
+// the benign re-trigger race with errors.Is instead of string matching.
+var ErrAnchorAlreadyDescending = errors.New("anchor is already descending")
+
 type Sequence struct {
 	mu      sync.RWMutex
 	state   model.AnchorState
@@ -27,7 +32,7 @@ func (s *Sequence) Request(at time.Time) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.state == model.AnchorDescending {
-		return errors.New("anchor is already descending")
+		return ErrAnchorAlreadyDescending
 	}
 	s.state = model.AnchorWaiting
 	s.started = at
@@ -38,12 +43,20 @@ func (s *Sequence) Request(at time.Time) error {
 func (s *Sequence) Update(at time.Time) model.AnchorState {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if s.state == model.AnchorDescending && (s.stop.Moving() || !s.hold.Proven(at)) {
+	// Abort on loss of either precondition while the pin is already traveling:
+	// sustained standstill must remain proven AND the brake-hold proof must
+	// remain proven. A momentary sub-tolerance blip is not enough to keep the
+	// crane pinned in place while the pin is between the deck and the socket.
+	if s.state == model.AnchorDescending && (!s.stop.Proven(at) || !s.hold.Proven(at)) {
 		s.state = model.AnchorAborted
-		s.reason = "motion or brake-hold loss during anchor descent"
+		s.reason = "standstill or brake-hold proof lost during anchor descent"
 		return s.state
 	}
-	if s.state == model.AnchorWaiting && s.stop.Proven(at) {
+	// Drop the pin only once continuous standstill AND sustained brake hold are
+	// both proven. Building pressure is not instantaneous, so requiring the
+	// brake-hold proof alongside the stop proof guarantees the crane cannot be
+	// nudged by the next gust while the pin is entering the socket.
+	if s.state == model.AnchorWaiting && s.stop.Proven(at) && s.hold.Proven(at) {
 		s.state = model.AnchorDescending
 		s.reason = ""
 	}
