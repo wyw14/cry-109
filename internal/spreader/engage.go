@@ -1,0 +1,70 @@
+package spreader
+
+import (
+	"errors"
+	"sync"
+
+	"github.com/wyw14/cry-109/internal/model"
+	"github.com/wyw14/cry-109/internal/twistlock"
+)
+
+type EngageState string
+
+const (
+	EngageOpen    EngageState = "open"
+	EngageLocking EngageState = "locking"
+	EngageLocked  EngageState = "locked"
+	EngageFailed  EngageState = "failed"
+)
+
+type EngageController struct {
+	mu      sync.Mutex
+	session string
+	state   EngageState
+	proofs  *twistlock.ProofReducer
+}
+
+func NewEngageController(sessionID string) *EngageController {
+	return &EngageController{session: sessionID, state: EngageOpen, proofs: twistlock.NewProofReducer(sessionID)}
+}
+
+func (c *EngageController) Begin(sessionID string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.session = sessionID
+	c.state = EngageLocking
+	c.proofs.Reset(sessionID)
+}
+
+func (c *EngageController) Confirm(ack model.TwistlockAck) model.TwistlockProof {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	proof := c.proofs.Apply(ack)
+	switch {
+	case proof.Failed:
+		c.state = EngageFailed
+	case proof.Complete:
+		c.state = EngageLocked
+	default:
+		c.state = EngageLocking
+	}
+	return proof
+}
+
+func (c *EngageController) Proof() model.TwistlockProof {
+	return c.proofs.Snapshot()
+}
+
+func (c *EngageController) State() EngageState {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.state
+}
+
+func (c *EngageController) RequireLocked() error {
+	proof := c.Proof()
+	if proof.SessionID != c.session || !proof.Complete || proof.Failed {
+		return errors.New("spreader does not have a complete current-session lock proof")
+	}
+	return nil
+}
