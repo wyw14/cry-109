@@ -26,7 +26,7 @@ func NewModelCache() *ModelCache {
 func (c *ModelCache) GetOrBuild(liftID string, geometry model.Geometry, ropeLength, payloadTonnes float64) model.AntiswayModel {
 	key := modelKey{
 		liftID:           liftID,
-		geometryRevision: 0,
+		geometryRevision: geometry.Revision,
 		ropeMillimeters:  int64(ropeLength * 1000),
 		payloadKilograms: int64(payloadTonnes * 1000),
 	}
@@ -53,8 +53,14 @@ func (c *ModelCache) GetOrBuild(liftID string, geometry model.Geometry, ropeLeng
 func (c *ModelCache) InvalidateGeometry(previous, current model.Geometry) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	_ = previous
-	_ = current
+	if previous.Revision == current.Revision {
+		return
+	}
+	for key, model := range c.models {
+		if model.GeometryRevision != current.Revision {
+			delete(c.models, key)
+		}
+	}
 }
 
 func (c *ModelCache) Size() int {
