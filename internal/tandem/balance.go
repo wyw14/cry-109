@@ -27,6 +27,16 @@ func (b *Balancer) Coordinate(sample model.LoadSample) (model.SpeedTargets, erro
 	if sample.LeftKN <= 0 || sample.RightKN <= 0 {
 		return model.SpeedTargets{}, errors.New("both tandem load cells must be healthy")
 	}
+	// A single load deviation may be observed by the left and right hoist
+	// controllers almost simultaneously. Each must not independently re-derive
+	// a correction from the full error, or both drives apply the same bias,
+	// the effective correction doubles, and the next cycle swings the other
+	// way. The first controller to arrive for a cycle commits one coordinated
+	// speed split; every later caller for that cycle reuses it verbatim, so a
+	// single deviation produces exactly one speed allocation.
+	if cached, exists := b.cycles[sample.Cycle]; exists {
+		return cached, nil
+	}
 	total := sample.LeftKN + sample.RightKN
 	errorRatio := (sample.LeftKN - sample.RightKN) / total
 	correction := clamp(errorRatio*b.gain, -b.limit, b.limit)
